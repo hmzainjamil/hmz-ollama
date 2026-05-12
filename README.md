@@ -1,108 +1,116 @@
 # hmz-ollama
-Ollama local LLM setup — permanent LaunchAgent daemon serving llama3, CodeLlama, and Mistral locally at zero cost, zero latency, zero data exposure.
+Local LLM infrastructure — Ollama server, model configs, and GPU-optimized inference on macOS.
 
-![models](https://img.shields.io/badge/models-3_loaded-blue?style=flat&labelColor=555) ![daemon](https://img.shields.io/badge/daemon-LaunchAgent_permanent-green?style=flat&labelColor=555) ![cost](https://img.shields.io/badge/cost-zero-brightgreen?style=flat&labelColor=555) ![privacy](https://img.shields.io/badge/privacy-fully_local-orange?style=flat&labelColor=555)
+![models](https://img.shields.io/badge/models-7%2B-blue?style=flat&labelColor=555)
+![cost](https://img.shields.io/badge/API_cost-zero-brightgreen?style=flat&labelColor=555)
+![gpu](https://img.shields.io/badge/backend-Metal%20GPU-orange?style=flat&labelColor=555)
+![platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey?style=flat&labelColor=555)
+![license](https://img.shields.io/badge/license-MIT-blue?style=flat&labelColor=555)
 
-[Concepts](#-concepts) · [Hot](#-hot) · [Models](#️-model-inventory) · [Tips](#-tips-and-tricks-20) · [Replaced](#️-startups--businesses) · [Stars](#star-history)
-
----
+[Concepts](#-concepts) · [Architecture](#️-architecture) · [Tips](#-tips-and-tricks-20) · [Kills](#️-startups--businesses) · [Stars](#star-history)
 
 ## 🧠 CONCEPTS
 
 | Feature | Location | Description |
 |---------|----------|-------------|
-| [**LaunchAgent daemon**](launchagent/ai.hmz.ollama.plist) | `~/Library/LaunchAgents/ai.hmz.ollama.plist` | `RunAtLoad=true` `KeepAlive=true` — Ollama always running on GPU, survives crashes and reboots |
-| [**REST API**](http://localhost:11434) | `http://localhost:11434` | OpenAI-compatible API — any tool supporting OpenAI format works with Ollama |
-| [**llama3:latest**](https://ollama.com/library/llama3) | `ollama pull llama3` | Default general model — 8B parameters, best balance of speed and quality for Tier 0 |
-| [**codellama:7b**](https://ollama.com/library/codellama) | `ollama pull codellama:7b` | Code generation and debugging — Meta's code-specialized model |
-| [**G0DM0D3 integration**](https://github.com/hmzainjamil/hmz-g0dm0d3) | `CLAUDE.md` | Ollama = first in Tier 0 routing — called before any cloud API for suitable tasks |
-| [**llm-burst integration**](https://github.com/hmzainjamil/claude-ai-system) | `~/.claude/bin/llm-burst` | Ollama included in 8-model parallel burst — local response always in the mix |
+| [**LaunchAgent Config**](launchagent/ai.hmz.ollama.plist) | `launchagent/ai.hmz.ollama.plist` | Permanent Ollama server — KeepAlive daemon, starts on login [![permanent](https://img.shields.io/badge/mode-permanent-green?style=flat&labelColor=555)] |
+| [**Llama 3 8B**](models/llama3) | `models/llama3/Modelfile` | General tasks, research, analysis — 4.7GB, ~40 tok/s on M1 |
+| [**Llama 3.1 8B**](models/llama3.1) | `models/llama3.1/Modelfile` | Improved context handling — better for long documents |
+| [**Llama 3.2 3B**](models/llama3.2) | `models/llama3.2/Modelfile` | Fastest local model — 3B params, instant responses |
+| [**Mistral 7B**](models/mistral) | `models/mistral/Modelfile` | Balanced, fast — coding and reasoning |
+| [**DeepSeek Coder**](models/deepseek-coder) | `models/deepseek-coder/Modelfile` | Specialized code generation — better than GPT-3.5 for code |
+| [**Qwen 2.5 Coder**](models/qwen-coder) | `models/qwen-coder/Modelfile` | 7B code model — top-tier local coding assistant |
+| [**Phi-3 Mini**](models/phi3) | `models/phi3/Modelfile` | Lightweight 3.8B — fastest for simple tasks |
+| [**Tier 0 Integration**](scripts/tier0-ollama.sh) | `scripts/tier0-ollama.sh` | G0DM0D3 integration — auto-routes qualifying tasks to local Ollama |
+| [**Health Check**](scripts/health-check.sh) | `scripts/health-check.sh` | Verifies Ollama is running + logs model availability |
 
 ### 🔥 Hot
 
 | Feature | Location | Description |
 |---------|----------|-------------|
-| [**GPU acceleration**](launchagent/) | `OLLAMA_GPU_OVERHEAD=0` | Metal GPU inference on macOS — 30-60 tok/sec vs 8-12 tok/sec CPU |
-| [**Low-RAM fallback**](CLAUDE.md) | `CLAUDE.md` | When RAM < 2GB free, skip Ollama in llm-burst — use Groq cloud instead |
-| [**Model hot-swap**](http://localhost:11434/api/tags) | `GET /api/tags` | Switch models without restarting Ollama — `ollama pull <new-model>` while running |
+| [**GPU Optimization**](configs/gpu-config.sh) | `configs/gpu-config.sh` | Metal backend tuning — max GPU layers, context size for Apple Silicon |
+| [**Model Preloader**](scripts/preload.sh) | `scripts/preload.sh` | Warms models on startup — zero cold start latency for tier 0 routing |
+| [**Hermes Mistral**](models/hermes) | `models/hermes/Modelfile` | Chat-optimized Mistral — best for conversational tasks |
 
----
+## ⚙️ ARCHITECTURE
 
-## ⚙️ MODEL INVENTORY
+```
+macOS LaunchAgent
+    │
+    ▼ on login
+Ollama Server (:11434)
+    │
+    ├─ llama3:latest     ← default, general purpose
+    ├─ llama3.1:latest   ← long-context documents
+    ├─ mistral:latest    ← fast balanced
+    ├─ deepseek-coder:latest ← code generation
+    └─ phi3:latest       ← lightweight tasks
 
-| Model | Size | Strength | When to Use |
-|-------|------|----------|-------------|
-| `llama3:latest` | 8B | General reasoning, chat, Q&A | Default for all general tasks |
-| `codellama:7b` | 7B | Code generation, debugging | Any code generation task |
-| `mistral:7b` | 7B | Fast general purpose | Speed-critical general tasks |
-| `phi3:mini` | 3.8B | Lightweight, fast | Low-RAM fallback |
-| `llama3.1:8b` | 8B | Improved context handling | Long-context tasks |
-| `deepseek-coder:6.7b` | 6.7B | Code specialist | Complex code tasks (pull when needed) |
+G0DM0D3 Router → Ollama API → localhost:11434
+Claude Code → llm-burst → Ollama (Tier 0A priority)
+```
 
----
+| Model | Size | Speed | Best Use | RAM Required |
+|-------|------|-------|----------|-------------|
+| Phi-3 mini | 2.3GB | ★★★★★ | Quick tasks, summaries | 4GB |
+| Llama 3.2 3B | 2.0GB | ★★★★★ | General, fast | 4GB |
+| Llama 3 8B | 4.7GB | ★★★★ | Balanced general | 8GB |
+| Mistral 7B | 4.1GB | ★★★★ | Code + reasoning | 8GB |
+| Qwen 2.5 Coder | 4.7GB | ★★★★ | Code generation | 8GB |
+| DeepSeek Coder | 4.7GB | ★★★ | Advanced code | 8GB |
 
 ## 💡 TIPS AND TRICKS (20)
 
-[Setup](#tips-setup) · [Performance](#tips-perf) · [Models](#tips-models) · [Integration](#tips-int) · [Debug](#tips-debug)
+[setup](#tips-setup) · [performance](#tips-performance) · [models](#tips-models) · [integration](#tips-integration)
 
-<a id="tips-setup"></a>■ **Setup (4)**
-
-| Tip | Source |
-|-----|--------|
-| LaunchAgent needs both `KeepAlive=true` AND `RunAtLoad=true` to be permanent | [macOS SOP](launchagent/) |
-| Set `OLLAMA_HOST=0.0.0.0:11434` in plist env to allow LAN access | [Networking](launchagent/) |
-| `OLLAMA_KEEP_ALIVE=24h` keeps models in GPU memory — avoids reload delay | [Performance](launchagent/) |
-| `OLLAMA_GPU_OVERHEAD=0` on M-series Macs for maximum GPU allocation | [Apple Silicon](launchagent/) |
-
-<a id="tips-perf"></a>■ **Performance (5)**
+<a id="tips-setup"></a>■ **Setup (5)**
 
 | Tip | Source |
 |-----|--------|
-| 8B models on M2 Pro with 32GB RAM = 40-60 tok/sec — matches cloud latency | [Benchmark](https://ollama.com) |
-| `ollama ps` to see loaded models and GPU/RAM usage in real-time | [Monitoring](https://ollama.com/docs) |
-| First token delay (cold start) = model not in GPU memory — use `OLLAMA_KEEP_ALIVE` | [Latency fix](launchagent/) |
-| Low RAM (<2GB)? Only run `phi3:mini` — other models thrash swap and freeze | [RAM rule](CLAUDE.md) |
-| Concurrent requests: Ollama handles one at a time — `llm-burst` routes Ollama as one of 8 | [Architecture](../hmz-g0dm0d3/) |
+| `brew install ollama` then `launchctl load` plist — permanent server in 2 commands | [Ollama](https://ollama.ai) |
+| Check RAM first: `sysctl hw.memsize` — need 2x model size free to run | [HMZ](https://github.com/hmzainjamil) |
+| `ollama pull llama3` before first use — 4.7GB download, cached permanently | [HMZ](https://github.com/hmzainjamil) |
+| LaunchAgent `KeepAlive=true` ensures server restarts after crash or sleep | [HMZ](https://github.com/hmzainjamil) |
+| `OLLAMA_NUM_GPU=1` env var — forces GPU acceleration on Apple Silicon | [Ollama](https://github.com/ollama/ollama/blob/main/docs/gpu.md) |
 
-<a id="tips-models"></a>■ **Model Selection (4)**
-
-| Tip | Source |
-|-----|--------|
-| General tasks → `llama3:latest` (best default) | [G0DM0D3 routing](../hmz-g0dm0d3/) |
-| Code → `codellama:7b` or `deepseek-coder:6.7b` (pull on demand) | [G0DM0D3 routing](../hmz-g0dm0d3/) |
-| Offline/private → any local model (nothing leaves the machine) | [Privacy principle](CLAUDE.md) |
-| `ollama pull <model>` is instant if already cached, ~minutes if new | [CLI](https://ollama.com) |
-
-<a id="tips-int"></a>■ **Integration (4)**
+<a id="tips-performance"></a>■ **Performance (5)**
 
 | Tip | Source |
 |-----|--------|
-| Any OpenAI-compatible tool works: point base_url to `http://localhost:11434/v1` | [Compatibility](https://ollama.com/docs) |
-| `llm-burst` calls Ollama as one parallel model — skip with `--no-ollama` on low RAM | [llm-burst](../claude-ai-system/automations/bin/llm-burst) |
-| G0DM0D3 routes suitable tasks to Ollama first — cloud only as fallback | [G0DM0D3](../hmz-g0dm0d3/) |
-| GPT4All and Ollama can run simultaneously — different ports, no conflict | [Multi-local](../hmz-personal-ai-infrastructure/) |
+| Metal GPU backend gives 3-5x speedup vs CPU — always enable on Apple Silicon | [Ollama](https://github.com/ollama/ollama) |
+| `OLLAMA_NUM_CTX=4096` — sufficient for most tasks, higher degrades speed | [HMZ](https://github.com/hmzainjamil) |
+| Keep only 1-2 models loaded simultaneously — each 7B model uses ~5GB VRAM | [HMZ](https://github.com/hmzainjamil) |
+| Phi-3 mini at 2.3GB leaves headroom for system — use when RAM is tight | [HMZ](https://github.com/hmzainjamil) |
+| Preload models at startup via script — avoids 2-3s cold start on first request | [HMZ](https://github.com/hmzainjamil) |
 
-<a id="tips-debug"></a>■ **Debug (3)**
+<a id="tips-models"></a>■ **Model Selection (5)**
 
 | Tip | Source |
 |-----|--------|
-| Ollama not responding: `launchctl restart ai.hmz.ollama` | [Runbook](launchagent/) |
-| `curl http://localhost:11434/api/tags` — health check from CLI | [API ref](https://ollama.com/docs) |
-| Model not loading: check `~/Library/Logs/ollama-error.log` for OOM errors | [Debug](launchagent/) |
+| Llama 3 8B beats GPT-3.5 on most benchmarks — strong default choice | [Meta AI](https://ai.meta.com/llama) |
+| Qwen 2.5 Coder 7B = best local code model below 10B — better than DeepSeek Coder 6.7B | [Qwen](https://github.com/QwenLM/Qwen2.5-Coder) |
+| Mistral 7B fastest for reasoning tasks — lower latency than Llama 3 8B | [Mistral AI](https://mistral.ai) |
+| Hermes Mistral: add `SYSTEM` prompt for chat — base Mistral needs prompting | [HMZ](https://github.com/hmzainjamil) |
+| `ollama list` shows all pulled models + size — check before routing decisions | [HMZ](https://github.com/hmzainjamil) |
 
----
+<a id="tips-integration"></a>■ **G0DM0D3 Integration (5)**
+
+| Tip | Source |
+|-----|--------|
+| Ollama is Tier 0A — always checked first by G0DM0D3 router before cloud | [HMZ](https://github.com/hmzainjamil) |
+| `curl -s http://localhost:11434/api/tags` — check server health from any script | [Ollama](https://github.com/ollama/ollama/blob/main/docs/api.md) |
+| If Ollama offline, G0DM0D3 falls through to Groq automatically | [HMZ](https://github.com/hmzainjamil) |
+| `llm-burst --models ollama 'prompt'` — forces local-only even with cloud available | [HMZ](https://github.com/hmzainjamil) |
+| Monitor token/s via `ollama ps` — drop to smaller model if below 20 tok/s | [HMZ](https://github.com/hmzainjamil) |
 
 ## ☠️ STARTUPS / BUSINESSES
 
 | Feature | Replaced |
 |-|-|
-| **Local LLM inference** | [Replicate](https://replicate.com), [Together AI](https://together.ai), [Fireworks AI](https://fireworks.ai) — cloud billing for local-capable work |
-| **Privacy-first inference** | [ChatGPT API](https://openai.com/api) — sends all data to OpenAI |
-| **Always-on daemon** | Manual `ollama serve` before each session |
-| **Zero-cost inference** | Groq free tier limits · Gemini rate limits — Ollama has none |
-| **OpenAI-compatible API** | Custom API adapters for each local model runtime |
-
----
+| **Local LLM Server** | [Jan.ai](https://jan.ai), [LM Studio](https://lmstudio.ai), [Msty](https://msty.app), [GPT4All Desktop](https://nomic.ai/gpt4all) |
+| **GPU-Optimized Inference** | [Together AI](https://together.ai), [Fireworks AI](https://fireworks.ai) — cloud GPU vs local GPU at $0 |
+| **Model Management** | [Hugging Face Hub](https://huggingface.co), [Civitai](https://civitai.com) |
+| **Always-On Server** | [Replicate](https://replicate.com), [Banana](https://banana.dev) — eliminates cold start costs |
 
 ## Star History
 
